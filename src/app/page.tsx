@@ -1,69 +1,110 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import {
+  ArrowRight,
+  CarFront,
+  CopyPlus,
+  FileCheck2,
+  MapPin,
+  MessageSquareWarning,
+  RefreshCcw,
+  Search,
+  ListChecks,
+} from "lucide-react";
+import { useLang } from "@/lib/i18n";
+import { Card } from "@/components/ui";
+
+export default function HomePage() {
+  const { t } = useLang();
+
+  const tasks = [
+    { href: "/apply?type=NEW_DL", icon: CarFront, title: t("task.get.title"), desc: t("task.get.desc") },
+    { href: "/apply?type=RENEWAL", icon: RefreshCcw, title: t("task.renew.title"), desc: t("task.renew.desc") },
+    { href: "/apply?type=DUPLICATE", icon: CopyPlus, title: t("task.dup.title"), desc: t("task.dup.desc") },
+    { href: "/track", icon: Search, title: t("task.track.title"), desc: t("task.track.desc") },
+  ];
+
+  const why = [
+    { icon: ListChecks, t: t("why.1.t"), d: t("why.1.d") },
+    { icon: MessageSquareWarning, t: t("why.2.t"), d: t("why.2.d") },
+    { icon: FileCheck2, t: t("why.3.t"), d: t("why.3.d") },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="space-y-10">
+      {/* Prototype banner */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+        <strong className="font-semibold">Hackathon prototype.</strong> Every account, payment,
+        document and RTO here is mock data.{" "}
+        <Link href="/about" className="font-semibold underline underline-offset-2">
+          See what is mocked
+        </Link>{" "}
+        · Demo logins are shown on the login page.
+      </div>
+
+      {/* Hero */}
+      <section className="text-center sm:text-left">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+          <MapPin className="h-3.5 w-3.5" /> {t("hero.badge")}
+        </span>
+        <h1 className="mt-4 max-w-2xl text-3xl leading-tight font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+          {t("hero.title")}
+        </h1>
+        <p className="mx-auto mt-3 max-w-2xl text-base leading-relaxed text-slate-600 sm:mx-0 sm:text-lg">
+          {t("hero.sub")}
+        </p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/apply"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            {t("hero.cta.apply")} <ArrowRight className="h-5 w-5" />
+          </Link>
+          <Link
+            href="/track"
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-6 py-3 text-base font-semibold text-slate-800 transition-colors hover:bg-slate-100"
           >
-            Documentation
-          </a>
+            {t("hero.cta.track")}
+          </Link>
         </div>
-      </main>
+      </section>
+
+      {/* Task cards — one task per screen */}
+      <section aria-label={t("dash.applications")}>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {tasks.map((task) => (
+            <Link key={task.href} href={task.href} className="group">
+              <Card className="flex h-full flex-col gap-3 transition-all group-hover:-translate-y-0.5 group-hover:border-blue-300 group-hover:shadow-md">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <task.icon className="h-6 w-6" />
+                </span>
+                <div className="flex-1">
+                  <h3 className="font-bold text-slate-900">{task.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">{task.desc}</p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600">
+                  {t("common.next")} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Why easier */}
+      <section>
+        <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">{t("why.title")}</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {why.map((w) => (
+            <Card key={w.t}>
+              <w.icon className="h-6 w-6 text-emerald-600" />
+              <h3 className="mt-3 font-bold text-slate-900">{w.t}</h3>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">{w.d}</p>
+            </Card>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
