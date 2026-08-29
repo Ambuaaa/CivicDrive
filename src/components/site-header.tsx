@@ -3,10 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, LogOut, Menu, Route, Info, ShieldCheck, X } from "lucide-react";
+import { LayoutDashboard, LogOut, Menu, PlayCircle, Route, Info, ShieldCheck, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+
+const DEMO_URL = "https://drive.google.com/file/d/1vM9d_4UqMIiaHqofNpi2a79qFPC6SVCH/view?usp=sharing";
 
 type HeaderUser = { name: string; role: string } | null;
 
@@ -23,6 +25,16 @@ export function SiteHeader({ user, onLogout }: { user: HeaderUser; onLogout?: ()
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      {/* Top demo banner — always visible */}
+      <a
+        href={DEMO_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-center gap-2 bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+      >
+        <PlayCircle className="h-4 w-4" /> Watch Demo Video — 2 min walkthrough
+        <span className="hidden sm:inline opacity-90">↗</span>
+      </a>
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
         <Link href="/" className="flex items-center gap-2.5" onClick={() => setOpen(false)}>
           <Logo size={34} />
@@ -44,6 +56,14 @@ export function SiteHeader({ user, onLogout }: { user: HeaderUser; onLogout?: ()
               {l.label}
             </Link>
           ))}
+          <a
+            href={DEMO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-1 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-red-700"
+          >
+            <PlayCircle className="h-4 w-4" /> Demo Video
+          </a>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -115,6 +135,14 @@ export function SiteHeader({ user, onLogout }: { user: HeaderUser; onLogout?: ()
       {open && (
         <div className="border-t border-slate-200 bg-white px-4 py-3 md:hidden">
           <nav className="flex flex-col gap-1">
+            <a
+              href={DEMO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 rounded-xl bg-red-600 px-3 py-3 text-base font-bold text-white"
+            >
+              <PlayCircle className="h-5 w-5" /> Watch Demo Video
+            </a>
             {links.map((l) => (
               <Link
                 key={l.href}
