@@ -1,24 +1,38 @@
 ﻿"use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
+  Bike,
   CarFront,
   Check,
   CopyPlus,
   FileText,
   Image as ImageIcon,
   RefreshCcw,
+  ShieldCheck,
+  Truck,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { submitApplication } from "@/app/actions/applications";
 import { Button, Card, FieldError, Hint, Input, Label, Select } from "@/components/ui";
 import { useLang, type TKey } from "@/lib/i18n";
-import { BLOOD_GROUPS, GENDERS, MAX_UPLOAD_BYTES, feeFor, type AppType, type DocType } from "@/lib/constants";
+import {
+  BLOOD_GROUPS,
+  GENDERS,
+  MAX_UPLOAD_BYTES,
+  VEHICLE_CLASS_LABEL,
+  feeFor,
+  type AppType,
+  type DocType,
+  type VehicleClass,
+} from "@/lib/constants";
 import { addressSchema, personalSchema } from "@/lib/validation";
 import { cn, formatINR } from "@/lib/utils";
+import { mockDigiLockerProvider } from "@/lib/digilocker";
 
 type RtoOption = { id: string; code: string; name: string; city: string };
 type Doc = { type: DocType; fileName: string; mimeType: string; dataUrl: string };
@@ -29,6 +43,15 @@ const TYPE_META: Record<AppType, { icon: typeof CarFront; label: string; desc: s
   NEW_DL: { icon: CarFront, label: "New Driving Licence", desc: "Apply for your first licence" },
   RENEWAL: { icon: RefreshCcw, label: "Renew Licence", desc: "Expiring or expired licence" },
   DUPLICATE: { icon: CopyPlus, label: "Duplicate Licence", desc: "Lost or damaged licence" },
+  LL_NEW: { icon: FileText, label: "Learner's Licence", desc: "First step: theory test" },
+  LL_TO_DL: { icon: ShieldCheck, label: "LL to DL", desc: "Upgrade learner to permanent" },
+};
+
+const VEHICLE_META: Record<VehicleClass, { icon: typeof CarFront; label: string }> = {
+  MCWG: { icon: Bike, label: VEHICLE_CLASS_LABEL.MCWG },
+  LMV: { icon: CarFront, label: VEHICLE_CLASS_LABEL.LMV },
+  MCWG_LMV: { icon: Bike, label: VEHICLE_CLASS_LABEL.MCWG_LMV },
+  TRANSPORT: { icon: Truck, label: VEHICLE_CLASS_LABEL.TRANSPORT },
 };
 
 const DOC_LIST: { type: DocType; label: string; hint: string }[] = [
@@ -37,8 +60,9 @@ const DOC_LIST: { type: DocType; label: string; hint: string }[] = [
   { type: "PHOTO", label: "Passport photo", hint: "Recent photo with plain background (JPG or PNG)" },
 ];
 
-/** Applicants must be 18+ â€” computed once at module load */
+/** Applicants must be 18+ — computed once at module load */
 const MAX_DOB = new Date(Date.now() - 18 * 365.25 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+const DRAFT_KEY = "civicdrive_draft_v2";
 
 export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultType: AppType }) {
   const { t } = useLang();
@@ -49,7 +73,11 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [type, setType] = useState<AppType>(defaultType);
+  const [vehicleClass, setVehicleClass] = useState<VehicleClass>("LMV");
   const [rtoId, setRtoId] = useState("");
+  const [kycProvider, setKycProvider] = useState<"MOCK" | "DIGILOCKER">("MOCK");
+  const [aadhaarLast4, setAadhaarLast4] = useState("");
+  const [digiLoading, setDigiLoading] = useState(false);
   const [personal, setPersonal] = useState({
     fullName: "",
     fatherName: "",
@@ -65,6 +93,47 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
     pincode: "",
   });
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof window !== "undefined" ? !window.navigator.onLine : false,
+  );
+
+  // Auto-save draft to localStorage (PWA offline queue)
+  useEffect(() => {
+    let restored = false;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw) as Record<string, unknown>;
+        // Defer state sync — effect subscribes to localStorage, not a render cascade
+        setTimeout(() => {
+          if (d.type) setType(d.type as AppType);
+          if (d.vehicleClass) setVehicleClass(d.vehicleClass as VehicleClass);
+          if (d.rtoId) setRtoId(d.rtoId as string);
+          if (d.personal) setPersonal(d.personal as typeof personal);
+          if (d.address) setAddress(d.address as typeof address);
+          if ((d.docs as Doc[])?.length) setDocs(d.docs as Doc[]);
+        }, 0);
+        restored = true;
+      }
+    } catch {}
+    if (restored) setTimeout(() => toast("Draft restored", { description: "Your previous progress was restored." }), 300);
+    const on = () => setIsOffline(!navigator.onLine);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", on);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", on);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ type, vehicleClass, rtoId, personal, address, docs: docs.slice(0, 3) }),
+      );
+    } catch {}
+  }, [type, vehicleClass, rtoId, personal, address, docs]);
 
   /* ---------------- validation per step ---------------- */
 
@@ -127,7 +196,7 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error("That file is over 1 MB. Please upload a smaller version â€” a clear photo works fine.");
+      toast.error("That file is over 1 MB. Please upload a smaller version — a clear photo works fine.");
       return;
     }
     const dataUrl: string = await new Promise((resolve, reject) => {
@@ -140,21 +209,48 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
       ...prev.filter((d) => d.type !== docType),
       { type: docType, fileName: file.name, mimeType: file.type, dataUrl },
     ]);
+    setKycProvider("MOCK");
     toast.success(`${DOC_LIST.find((d) => d.type === docType)?.label} uploaded`);
+  }
+
+  async function handleDigiPull() {
+    if (!/^\d{4}$/.test(aadhaarLast4)) {
+      toast.error("Enter last 4 digits of Aadhaar (e.g. 1234)");
+      return;
+    }
+    setDigiLoading(true);
+    try {
+      const pulled = await mockDigiLockerProvider.pullDocuments(aadhaarLast4);
+      setDocs(pulled.map((d) => ({ type: d.type, fileName: d.fileName, mimeType: d.mimeType, dataUrl: d.dataUrl })));
+      setKycProvider("DIGILOCKER");
+      toast.success("Documents pulled from DigiLocker (mock) — verified");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "DigiLocker pull failed");
+    } finally {
+      setDigiLoading(false);
+    }
   }
 
   /* ---------------- final submit ---------------- */
 
   function handleSubmit() {
+    if (isOffline) {
+      toast.error("You are offline — draft saved, will submit when back online.");
+      return;
+    }
     startTransition(async () => {
       const res = await submitApplication({
         type,
+        vehicleClass,
         rtoId,
+        kycProvider,
+        digilockerId: kycProvider === "DIGILOCKER" ? `DL-MOCK-${aadhaarLast4}` : undefined,
         personal: { ...personal, bloodGroup: personal.bloodGroup || undefined },
         address,
         documents: docs,
       });
       if (res.ok) {
+        localStorage.removeItem(DRAFT_KEY);
         toast.success(`Application ${res.data.applicationNumber} submitted!`);
         router.push(`/application/${res.data.applicationId}?submitted=1`);
       } else {
@@ -165,9 +261,15 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
   }
 
   const selectedRto = rtos.find((r) => r.id === rtoId);
+  const fees = feeFor(type, vehicleClass);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800">
+          <WifiOff className="h-4 w-4" /> You are offline — draft is auto-saved. Submit will resume when online.
+        </div>
+      )}
       {/* Progress checklist */}
       <ol className="flex items-center gap-1 overflow-x-auto pb-1" aria-label="Application progress">
         {STEP_KEYS.map((key, i) => {
@@ -200,19 +302,20 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
       </ol>
 
       <Card>
-        {/* STEP 0 â€” service + RTO */}
+        {/* STEP 0 — service + vehicle class + RTO */}
         {step === 0 && (
           <>
             <h2 className="text-lg font-bold text-slate-900">{t("step.type")}</h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               {(Object.keys(TYPE_META) as AppType[]).map((k) => {
-                const meta = TYPE_META[k];
+                const meta = TYPE_META[k as AppType];
+                if (!meta) return null;
                 const active = type === k;
                 return (
                   <button
                     key={k}
                     type="button"
-                    onClick={() => setType(k)}
+                    onClick={() => setType(k as AppType)}
                     aria-pressed={active}
                     className={cn(
                       "rounded-xl border p-3 text-left transition-all",
@@ -222,22 +325,49 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
                     <meta.icon className={cn("h-5 w-5", active ? "text-blue-600" : "text-slate-400")} />
                     <p className="mt-2 text-sm font-bold text-slate-900">{meta.label}</p>
                     <p className="mt-0.5 text-xs leading-snug text-slate-500">{meta.desc}</p>
-                    <p className="mt-2 text-sm font-bold text-slate-900">
-                      {formatINR(feeFor(k).base)}{" "}
-                      <span className="text-xs font-normal text-slate-500">+ {formatINR(feeFor(k).convenience)} fee</span>
-                    </p>
                   </button>
                 );
               })}
             </div>
 
+            <h3 className="mt-5 text-sm font-bold text-slate-900">Vehicle class</h3>
+            <div className="mt-2 grid gap-2 sm:grid-cols-4">
+              {(Object.keys(VEHICLE_META) as VehicleClass[]).map((vc) => {
+                const m = VEHICLE_META[vc];
+                const active = vehicleClass === vc;
+                return (
+                  <button
+                    key={vc}
+                    type="button"
+                    onClick={() => setVehicleClass(vc)}
+                    aria-pressed={active}
+                    className={cn(
+                      "rounded-xl border p-2.5 text-center transition-all",
+                      active ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300",
+                    )}
+                  >
+                    <m.icon className={cn("mx-auto h-5 w-5", active ? "text-blue-600" : "text-slate-400")} />
+                    <span className="mt-1 block text-xs font-bold text-slate-900">{m.label}</span>
+                    <span className="block text-[11px] text-slate-500">{vc}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm">
+              Fee: <strong>{formatINR(fees.total)}</strong> ({formatINR(fees.base)} + {formatINR(fees.convenience)} processing)
+              {vehicleClass !== "LMV" && vehicleClass !== "MCWG" && (
+                <span className="text-slate-500"> incl. {formatINR(fees.base - (feeFor(type, "LMV").base))} class surcharge</span>
+              )}
+            </div>
+
             <div className="mt-5">
               <Label htmlFor="rto">RTO office</Label>
               <Select id="rto" value={rtoId} onChange={(e) => setRtoId(e.target.value)}>
-                <option value="">Choose your RTOâ€¦</option>
+                <option value="">Choose your RTO…</option>
                 {rtos.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} ({r.code}) â€” {r.city}
+                    {r.name} ({r.code}) — {r.city}
                   </option>
                 ))}
               </Select>
@@ -247,7 +377,7 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
           </>
         )}
 
-        {/* STEP 1 â€” personal */}
+        {/* STEP 1 — personal */}
         {step === 1 && (
           <>
             <h2 className="text-lg font-bold text-slate-900">{t("step.personal")}</h2>
@@ -291,7 +421,7 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
                   value={personal.gender}
                   onChange={(e) => setPersonal((p) => ({ ...p, gender: e.target.value }))}
                 >
-                  <option value="">Selectâ€¦</option>
+                  <option value="">Select…</option>
                   {GENDERS.map((g) => (
                     <option key={g}>{g}</option>
                   ))}
@@ -307,7 +437,7 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
                   value={personal.bloodGroup}
                   onChange={(e) => setPersonal((p) => ({ ...p, bloodGroup: e.target.value }))}
                 >
-                  <option value="">Selectâ€¦</option>
+                  <option value="">Select…</option>
                   {BLOOD_GROUPS.map((b) => (
                     <option key={b}>{b}</option>
                   ))}
@@ -317,7 +447,7 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
           </>
         )}
 
-        {/* STEP 2 â€” address */}
+        {/* STEP 2 — address */}
         {step === 2 && (
           <>
             <h2 className="text-lg font-bold text-slate-900">{t("step.address")}</h2>
@@ -380,11 +510,40 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
           </>
         )}
 
-        {/* STEP 3 â€” documents */}
+        {/* STEP 3 — documents with DigiLocker */}
         {step === 3 && (
           <>
             <h2 className="text-lg font-bold text-slate-900">{t("step.documents")}</h2>
-            <Hint>Max 1 MB each. Files stay inside this demo â€” nothing is sent anywhere.</Hint>
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <p className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                <ShieldCheck className="h-4 w-4" /> Pull from DigiLocker (recommended)
+              </p>
+              <p className="mt-1 text-xs text-blue-700">Verified docs skip manual review — faster approval. Mock provider for demo.</p>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  placeholder="Last 4 of Aadhaar (e.g. 1234)"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={aadhaarLast4}
+                  onChange={(e) => setAadhaarLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  className="max-w-[160px]"
+                />
+                <Button size="sm" variant="secondary" onClick={handleDigiPull} disabled={digiLoading}>
+                  {digiLoading ? "Pulling…" : "Pull docs"}
+                </Button>
+              </div>
+              {kycProvider === "DIGILOCKER" && (
+                <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                  <Check className="h-3.5 w-3.5" /> DigiLocker verified — 3 docs loaded
+                </p>
+              )}
+            </div>
+
+            <div className="my-3 flex items-center gap-2 text-xs font-semibold tracking-wide text-slate-400 uppercase">
+              <span className="h-px flex-1 bg-slate-200" /> or upload manually <span className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <Hint>Max 1 MB each. Files stay inside this demo — nothing is sent anywhere.</Hint>
             <div className="mt-4 space-y-3">
               {DOC_LIST.map((d) => {
                 const uploaded = docs.find((x) => x.type === d.type);
@@ -427,22 +586,23 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
           </>
         )}
 
-        {/* STEP 4 â€” review */}
+        {/* STEP 4 — review */}
         {step === 4 && (
           <>
             <h2 className="text-lg font-bold text-slate-900">{t("step.review")}</h2>
             <div className="mt-3 space-y-4 text-sm">
               <ReviewBlock title={t("step.type")} onEdit={() => setStep(0)}>
-                {TYPE_META[type].label} Â· {selectedRto?.name} ({selectedRto?.code})
+                {TYPE_META[type]?.label ?? type} · {VEHICLE_CLASS_LABEL[vehicleClass]} · {selectedRto?.name} ({selectedRto?.code})
+                {kycProvider === "DIGILOCKER" && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">DigiLocker</span>}
               </ReviewBlock>
               <ReviewBlock title={t("step.personal")} onEdit={() => setStep(1)}>
-                {personal.fullName}, {personal.dob} Â· {personal.gender}
+                {personal.fullName}, {personal.dob} · {personal.gender}
                 <br />
                 Father&apos;s name: {personal.fatherName}
-                {personal.bloodGroup ? ` Â· Blood: ${personal.bloodGroup}` : ""}
+                {personal.bloodGroup ? ` · Blood: ${personal.bloodGroup}` : ""}
               </ReviewBlock>
               <ReviewBlock title={t("step.address")} onEdit={() => setStep(2)}>
-                {address.houseNo}, {address.street}, {address.city}, {address.state} â€” {address.pincode}
+                {address.houseNo}, {address.street}, {address.city}, {address.state} — {address.pincode}
               </ReviewBlock>
               <ReviewBlock title={t("step.documents")} onEdit={() => setStep(3)}>
                 <ul className="space-y-1">
@@ -459,10 +619,8 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
               </ReviewBlock>
               <div className="rounded-xl bg-slate-50 p-3 text-slate-600">
                 Fee payable after document verification:{" "}
-                <strong className="text-slate-900">
-                  {formatINR(feeFor(type).base + feeFor(type).convenience)}
-                </strong>{" "}
-                ({formatINR(feeFor(type).base)} application + {formatINR(feeFor(type).convenience)} processing)
+                <strong className="text-slate-900">{formatINR(fees.total)}</strong> ({formatINR(fees.base)} application +{" "}
+                {formatINR(fees.convenience)} processing)
               </div>
             </div>
           </>
@@ -490,7 +648,10 @@ export function ApplyWizard({ rtos, defaultType }: { rtos: RtoOption[]; defaultT
       </Card>
 
       <p className="text-center text-xs text-slate-400">
-        Demo prototype â€” all details you enter are mock data stored locally.
+        Demo prototype — all details you enter are mock data stored locally.{" "}
+        <button onClick={() => { localStorage.removeItem(DRAFT_KEY); toast("Draft cleared"); }} className="underline">
+          Clear draft
+        </button>
       </p>
     </div>
   );

@@ -68,8 +68,11 @@ const docDataSchema = z.object({
 });
 
 export const submitApplicationSchema = z.object({
-  type: z.enum(["NEW_DL", "RENEWAL", "DUPLICATE"]),
+  type: z.enum(["NEW_DL", "RENEWAL", "DUPLICATE", "LL_NEW", "LL_TO_DL"]),
+  vehicleClass: z.enum(["MCWG", "LMV", "MCWG_LMV", "TRANSPORT"]).default("LMV"),
   rtoId: z.string().min(1, "Please choose your RTO"),
+  kycProvider: z.enum(["MOCK", "DIGILOCKER"]).default("MOCK"),
+  digilockerId: z.string().optional(),
   personal: personalSchema,
   address: addressSchema,
   documents: z

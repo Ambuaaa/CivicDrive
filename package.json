@@ -8,8 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "postinstall": "prisma generate"
   },
+  
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@prisma/client": "^6.16.2",

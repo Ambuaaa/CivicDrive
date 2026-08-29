@@ -10,7 +10,7 @@ import {
   paySchema,
   submitApplicationSchema,
 } from "@/lib/validation";
-import { randomTxnId } from "@/lib/utils";
+import { mockPaymentProvider } from "@/lib/payments";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
@@ -24,18 +24,10 @@ function flatten(error: z.ZodError) {
 }
 
 async function nextApplicationNumber(): Promise<string> {
-  const count = await db.application.count();
+  // Atomic enough for SQLite: timestamp + random suffix, uniqueness enforced by DB unique constraint
   const year = new Date().getFullYear();
-  let n = count + 100001;
-  let attempt = 0;
-  while (attempt < 5) {
-    const candidate = `CD-${year}-${n}`;
-    const exists = await db.application.findUnique({ where: { applicationNumber: candidate } });
-    if (!exists) return candidate;
-    n += Math.floor(Math.random() * 7) + 1;
-    attempt++;
-  }
-  return `CD-${year}-${Date.now().toString().slice(-6)}`;
+  const suffix = `${Date.now().toString(36).slice(-4).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`;
+  return `CD-${year}-${suffix}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -62,7 +54,10 @@ export async function submitApplication(
       applicationNumber,
       userId: user.id,
       type: d.type,
+      vehicleClass: d.vehicleClass,
       status: STATUS.SUBMITTED,
+      kycProvider: d.kycProvider,
+      digilockerId: d.digilockerId ?? null,
       fullName: d.personal.fullName,
       dob: d.personal.dob,
       gender: d.personal.gender,
@@ -80,13 +75,17 @@ export async function submitApplication(
           fileName: doc.fileName,
           mimeType: doc.mimeType,
           data: doc.dataUrl,
-          status: "PENDING",
+          status: d.kycProvider === "DIGILOCKER" ? "VERIFIED" : "PENDING",
+          verificationId: d.kycProvider === "DIGILOCKER" ? d.digilockerId ?? null : null,
         })),
       },
       history: {
         create: {
           status: STATUS.SUBMITTED,
-          message: "Application submitted with all documents.",
+          message:
+            d.kycProvider === "DIGILOCKER"
+              ? "Application submitted via DigiLocker — docs pre-verified."
+              : "Application submitted with all documents.",
           actor: "CITIZEN",
         },
       },
@@ -131,20 +130,30 @@ export async function payFee(
     };
   }
 
-  const fees = feeFor(app.type);
-  const txnId = randomTxnId();
+  const fees = feeFor(app.type, app.vehicleClass);
+  const result = await mockPaymentProvider.createPayment({
+    amount: fees.total,
+    applicationNumber: app.applicationNumber,
+    method: parsed.data.method,
+  });
+  if (result.status !== "SUCCESS") {
+    return { ok: false, error: "Payment failed at gateway — please try again." };
+  }
 
   await db.payment.create({
     data: {
       applicationId: app.id,
-      txnId,
-      amount: fees.base + fees.convenience,
+      txnId: result.txnId,
+      amount: fees.total,
       baseFee: fees.base,
       convenienceFee: fees.convenience,
       method: parsed.data.method,
-      status: "SUCCESS",
+      status: result.status,
+      gatewayRef: result.gatewayRef,
+      receiptUrl: result.receiptUrl,
     },
   });
+  const txnId = result.txnId;
 
   const newStatus = STATUS.FEE_PAID;
 
@@ -166,7 +175,7 @@ export async function payFee(
     data: {
       userId: user.id,
       title: "Payment successful",
-      body: `We received ₹${fees.base + fees.convenience} for ${app.applicationNumber}. Txn ID: ${txnId}. Next: book your RTO slot.`,
+      body: `We received ₹${fees.total} for ${app.applicationNumber}. Txn ID: ${txnId}. Next: book your RTO slot.`,
       link: `/application/${app.id}`,
     },
   });

@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   title: "CivicDrive — Driving licence services made simple",
   description:
     "A cleaner, friendlier way to apply for, renew and track driving licence services. Hackathon prototype with mock data.",
+  manifest: "/manifest.json",
+  themeColor: "#2563eb",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

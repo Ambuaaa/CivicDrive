@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -17,7 +17,7 @@ model User {
   email         String         @unique
   phone         String?
   passwordHash  String
-  role          String         @default("CITIZEN") // CITIZEN | ADMIN
+  role          String         @default("CITIZEN") // CITIZEN | ADMIN | RTO_OFFICER
   applications  Application[]
   notifications Notification[]
   createdAt     DateTime       @default(now())
@@ -40,22 +40,35 @@ model Slot {
   rto         Rto          @relation(fields: [rtoId], references: [id])
   date        String // ISO yyyy-mm-dd
   time        String // HH:mm 24h
+  capacity    Int          @default(1)
+  bookedCount Int          @default(0)
+  isHoliday   Boolean      @default(false)
   appointment Appointment?
+
+  @@unique([rtoId, date, time])
+  @@index([rtoId, date])
 }
 
 model Application {
   id                String          @id @default(cuid())
-  applicationNumber String          @unique // CD-2026-XXXXXX
+  applicationNumber String          @unique // CD-2026-XXXXXX (atomic via cuid suffix)
   userId            String
   user              User            @relation(fields: [userId], references: [id])
-  type              String          @default("NEW_DL") // NEW_DL | RENEWAL | DUPLICATE
+  type              String          @default("NEW_DL") // NEW_DL | RENEWAL | DUPLICATE | LL_NEW | LL_TO_DL
   status            String          @default("SUBMITTED")
+  vehicleClass      String          @default("LMV") // MCWG | LMV | MCWG+LMV | TRANSPORT
 
   fullName   String
   dob        String // yyyy-mm-dd
   gender     String
   fatherName String
   bloodGroup String?
+
+  // Digilocker / eKYC
+  digilockerId     String?
+  aadhaarLast4     String?
+  kycProvider      String? // MOCK | DIGILOCKER
+  kycVerifiedAt    DateTime?
 
   houseNo String
   street  String
@@ -76,17 +89,21 @@ model Application {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([rtoId, status])
 }
 
 model Document {
   id            String      @id @default(cuid())
   applicationId String
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  type          String // ID_PROOF | ADDRESS_PROOF | PHOTO
+  type          String // ID_PROOF | ADDRESS_PROOF | PHOTO | LL_CERT
   fileName      String
   mimeType      String
-  data          String // base64 data URL — mock storage
+  data          String // base64 data URL — mock storage; prod: S3 key
   status        String      @default("PENDING") // PENDING | VERIFIED | REJECTED
+  verificationId String? // DigiLocker docId or OCR job id
   uploadedAt    DateTime    @default(now())
 
   @@index([applicationId])
@@ -101,7 +118,9 @@ model Payment {
   baseFee        Int
   convenienceFee Int
   method         String // upi | card | netbanking
-  status         String      @default("SUCCESS")
+  status         String      @default("SUCCESS") // SUCCESS | PENDING | FAILED | REFUNDED
+  gatewayRef     String?
+  receiptUrl     String?
   createdAt      DateTime    @default(now())
 }
 
@@ -111,6 +130,7 @@ model Appointment {
   application   Application @relation(fields: [applicationId], references: [id])
   slotId        String      @unique // one booking per slot => prevents double booking
   slot          Slot        @relation(fields: [slotId], references: [id])
+  status        String      @default("BOOKED") // BOOKED | CANCELLED | COMPLETED | NO_SHOW
   createdAt     DateTime    @default(now())
 }
 
@@ -121,6 +141,8 @@ model StatusHistory {
   status        String
   message       String?
   actor         String      @default("SYSTEM")
+  actorId       String?
+  ipAddress     String?
   createdAt     DateTime    @default(now())
 
   @@index([applicationId])
@@ -133,6 +155,7 @@ model Notification {
   title     String
   body      String
   link      String?
+  channel   String    @default("IN_APP") // IN_APP | SMS | EMAIL
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
